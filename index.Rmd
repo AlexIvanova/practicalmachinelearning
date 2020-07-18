@@ -1,0 +1,104 @@
+---
+title: "PML Course Project"
+author: "Alex Ivanova"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Objectives
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. The goal of this project is to use data from accelerometers on the belt, forearm, arm, dumbell of 6 participants, and predict the manner in which they did the exercise. The data for this project come from this [source](http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har).
+
+### Reading in and Looking at Data
+
+We have two datasets — a training set and a testing one. The testing set has 20 observations and the training set set has 19,622 observations with 160 features. Class A corresponds to the specified execution of the exercise, while the other 4 classes correspond to common mistakes.
+
+```{r reading in and looking at data, cache=TRUE}
+pml_training <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", header = TRUE, na.strings = c("NA","#DIV/0!", ""))
+pml_testing <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", header = TRUE, na.strings = c("NA","#DIV/0!", ""))
+unique(pml_training$classe)
+```
+
+### Cleaning the Data
+
+Firstly, we can look at the percentage of NA values in the data.
+
+```{r the percentage of NAs}
+colMeans(is.na(pml_training))
+```
+
+We can see that there are a lot of columns with almost 100% of missing values. When using ML algorithms, those won't be of much relevance. Also some columns have no useful for prediction information, such as the name of the participant or time stamps. Therefore, we can safely delete them.
+
+```{r cleaning data}
+pml_training_clean <- pml_training[colMeans(is.na(pml_training)) < 0.9]
+pml_testing_clean <- pml_testing[colMeans(is.na(pml_testing)) < 0.9]
+pml_training_clean <- pml_training_clean[, -c(1:7)]
+pml_testing_clean <- pml_testing_clean[, -c(1:7)]
+pml_training_clean$classe <- as.factor(pml_training_clean$classe)
+```
+
+### Partitioning the Data
+
+Cross-validation will be performed as following: since we have both a testing set and a training set, let's partition the data further and use our testing set with 20 tests for validation. And the training data will be split into classic 60/40 training/test sets. Also the seed will be set for the purpose of reproducibility.
+
+```{r data partition, message=FALSE}
+library(caret)
+set.seed(1234)
+partition <- createDataPartition(y = pml_training_clean$classe,
+                                 p = 0.6, list = FALSE)
+training <- pml_training_clean[partition, ]
+testing <- pml_training_clean[-partition, ]
+```
+
+## Prediction Using Decision Trees
+
+The data is continuous, so we will be predicting using decision trees and random forests. Firstly, we'll try decision trees.
+
+```{r rpart prediction and plot, message=FALSE}
+library(rpart)
+library(rattle)
+rpartModel <- rpart(factor(classe) ~ ., data = training, method = "class")
+rpartPrediction <- predict(rpartModel, newdata = testing, type = "class")
+fancyRpartPlot(rpartModel, sub = "Rpart Model Plot")
+```
+
+The plot was made using the `rattle` package.
+
+```{r rpart accuracy}
+CM <- confusionMatrix(rpartPrediction, testing$classe)
+CM$table
+CM$overall[1]
+```
+
+As we can see, the accuracy equals 73%. The expected out-of-sample error is `1 - accuracy`, which is 27%.
+
+## Prediction Using Random Forests
+
+Now we will try the random forest algorithm.
+
+```{r random forest, message=FALSE, cache=TRUE}
+library(randomForest)
+RFModel <- randomForest(factor(classe) ~ ., data = training, method = "class")
+RFPrediction <- predict(RFModel, newdata = testing, type = "class")
+CMrf <- confusionMatrix(RFPrediction, testing$classe)
+CMrf$table
+CMrf$overall[1]
+```
+
+The accuracy is 99%. The expected out-of-sample error is `1 - accuracy`, which is 0.5%.
+
+## Conclusion
+
+The random forest algorithm performed much better than decision trees — 99% versus 73%.
+
+### Validation
+
+Now let's perform the chosen model on the validation set.
+
+```{r validation}
+valPrediction <- predict(RFModel, pml_testing_clean, type = "class")
+valPrediction
+```
